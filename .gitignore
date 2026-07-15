@@ -1,0 +1,4 @@
+*.zip
+SDNET2018*
+datasets*
+*pycache*

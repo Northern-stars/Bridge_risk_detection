@@ -1,0 +1,21 @@
+{
+  "settings_version": "0.0.6",
+  "datasets_dir": "/opt/homebrew/datasets",
+  "weights_dir": "/opt/homebrew/weights",
+  "runs_dir": "/opt/homebrew/runs",
+  "uuid": "556922a095c8e00de42d159d59bdd34caf1743a5b7e257e285e70ea1b053f74f",
+  "sync": true,
+  "api_key": "",
+  "openai_api_key": "",
+  "clearml": true,
+  "comet": true,
+  "dvc": true,
+  "hub": true,
+  "mlflow": true,
+  "neptune": true,
+  "raytune": true,
+  "tensorboard": false,
+  "wandb": false,
+  "vscode_msg": true,
+  "openvino_msg": true
+}
