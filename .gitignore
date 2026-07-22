@@ -1,4 +1,6 @@
 *.zip
-SDNET2018*
 datasets*
 *pycache*
+DownloadDataset*
+RawDataset*
+._*
