@@ -9,15 +9,17 @@ from pathlib import Path
 # from dacl_yolo_dataset import create_dataset
 # DATASET_PATH=Path("RawDataset/dacl")
 
-from multi_defact_yolo_dataset import create_dataset
-DATASET_PATH=("RawDataset/multi_defact")
+# from multi_defact_yolo_dataset import create_dataset
+# DATASET_PATH=("RawDataset/multi_defact")
 
+from csb_yolo_dataset import create_dataset
+DATASET_PATH = Path("RawDataset/CSB_dataset")
 
-MODEL = "yolo26s.pt"
-EPOCHS = 50
+MODEL = "yolo26n.pt"
+EPOCHS = 100
 IMGSZ = 640
 BATCH = 32
-WORKERS = 4
+WORKERS = 12
 DEVICE = None
 PROJECT = "runs/detect"
 NAME = "yolo26_train"

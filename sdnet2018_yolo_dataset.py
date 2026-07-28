@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from pathlib import Path
 import random
-import shutil
 from typing import Callable, Iterable, Literal
 
 import torch
 from PIL import Image
-from torch.utils.data import Dataset
-from tqdm import tqdm
+from torch.utils.data import Dataset, Subset
 
 
 SurfaceType = Literal["D", "P", "W"]
+ClassMode = Literal["binary", "surface_damage"]
 
 
 @dataclass(frozen=True)
@@ -22,27 +20,20 @@ class SDNET2018Sample:
     surface: SurfaceType
     label_dir: str
     cracked: bool
+    class_id: int
 
 
-class SDNET2018YoloDataset(Dataset):
-    """SDNET2018 as a YOLO-style detection dataset.
+class SDNET2018ClassificationDataset(Dataset):
+    """SDNET2018 as an image classification dataset.
 
-    SDNET2018 provides image-level labels for 256 x 256 cropped concrete
-    patches, not pixel masks or crack bounding boxes. For detection pipelines,
-    this dataset exposes a weak YOLO target:
+    SDNET2018 is natively labeled at image level: each 256 x 256 RGB patch is
+    either cracked or uncracked. The default ``class_mode="binary"`` uses:
 
-    - cracked patch: one box covering the full image, ``[class, x, y, w, h]``
-      where coordinates are normalized YOLO xywh values.
-    - uncracked patch: an empty ``(0, 5)`` target tensor.
+    - ``0``: uncracked
+    - ``1``: crack
 
-    Directory layout expected by this class:
-
-    ``root/D/CD/*.jpg``  cracked deck
-    ``root/D/UD/*.jpg``  uncracked deck
-    ``root/P/CP/*.jpg``  cracked pavement
-    ``root/P/UP/*.jpg``  uncracked pavement
-    ``root/W/CW/*.jpg``  cracked wall
-    ``root/W/UW/*.jpg``  uncracked wall
+    ``class_mode="surface_damage"`` exposes six classes by combining surface
+    type and crack state: CD, UD, CP, UP, CW, UW.
     """
 
     SURFACE_NAMES = {
@@ -55,19 +46,24 @@ class SDNET2018YoloDataset(Dataset):
         "P": ("CP", "UP"),
         "W": ("CW", "UW"),
     }
+    CLASS_NAMES_BY_MODE = {
+        "binary": ("uncracked", "crack"),
+        "surface_damage": ("CD", "UD", "CP", "UP", "CW", "UW"),
+    }
 
     def __init__(
         self,
         root: str | Path,
         *,
         surfaces: Iterable[SurfaceType] = ("D", "P", "W"),
-        cracked_only: bool = False,
+        class_mode: ClassMode = "binary",
         transform: Callable | None = None,
         target_transform: Callable | None = None,
         return_meta: bool = True,
         image_extensions: tuple[str, ...] = (".jpg", ".jpeg", ".png"),
     ) -> None:
         self.root = Path(root)
+        self.class_mode = class_mode
         self.transform = transform
         self.target_transform = target_transform
         self.return_meta = return_meta
@@ -75,8 +71,13 @@ class SDNET2018YoloDataset(Dataset):
 
         if not self.root.exists():
             raise FileNotFoundError(f"SDNET2018 root does not exist: {self.root}")
+        if self.class_mode not in self.CLASS_NAMES_BY_MODE:
+            valid = ", ".join(self.CLASS_NAMES_BY_MODE)
+            raise ValueError(f"Unknown class_mode '{class_mode}'. Valid modes: {valid}")
 
-        self.samples = self._scan_samples(surfaces, cracked_only)
+        self.class_names = list(self.CLASS_NAMES_BY_MODE[self.class_mode])
+        self.num_classes = len(self.class_names)
+        self.samples = self._scan_samples(surfaces)
         if not self.samples:
             raise RuntimeError(
                 f"No SDNET2018 images found under {self.root}. "
@@ -91,7 +92,7 @@ class SDNET2018YoloDataset(Dataset):
         with Image.open(sample.image_path) as image:
             image = image.convert("RGB")
 
-        target = self._target_for_sample(sample)
+        target = torch.tensor(sample.class_id, dtype=torch.long)
 
         if self.transform is not None:
             image = self.transform(image)
@@ -110,14 +111,11 @@ class SDNET2018YoloDataset(Dataset):
             "surface_name": self.SURFACE_NAMES[sample.surface],
             "label_dir": sample.label_dir,
             "cracked": sample.cracked,
+            "class_name": self.class_names[sample.class_id],
         }
         return image, target, meta
 
-    def _scan_samples(
-        self,
-        surfaces: Iterable[SurfaceType],
-        cracked_only: bool,
-    ) -> list[SDNET2018Sample]:
+    def _scan_samples(self, surfaces: Iterable[SurfaceType]) -> list[SDNET2018Sample]:
         samples: list[SDNET2018Sample] = []
 
         for surface in surfaces:
@@ -125,15 +123,13 @@ class SDNET2018YoloDataset(Dataset):
                 valid = ", ".join(self.LABEL_DIRS)
                 raise ValueError(f"Unknown surface '{surface}'. Valid surfaces: {valid}")
 
-            cracked_dir, uncracked_dir = self.LABEL_DIRS[surface]
-            label_dirs = (cracked_dir,) if cracked_only else (cracked_dir, uncracked_dir)
-
-            for label_dir in label_dirs:
+            for label_dir in self.LABEL_DIRS[surface]:
                 folder = self.root / surface / label_dir
                 if not folder.exists():
                     continue
 
                 cracked = label_dir.startswith("C")
+                class_id = self._class_id(surface, label_dir, cracked)
                 for image_path in sorted(folder.iterdir()):
                     if image_path.is_file() and image_path.suffix.lower() in self.image_extensions:
                         samples.append(
@@ -142,18 +138,16 @@ class SDNET2018YoloDataset(Dataset):
                                 surface=surface,
                                 label_dir=label_dir,
                                 cracked=cracked,
+                                class_id=class_id,
                             )
                         )
 
         return samples
 
-    @staticmethod
-    def _target_for_sample(sample: SDNET2018Sample) -> torch.Tensor:
-        if not sample.cracked:
-            return torch.empty((0, 5), dtype=torch.float32)
-
-        # class_id=0 means "crack"; normalized xywh covers the full 256x256 patch.
-        return torch.tensor([[0.0, 0.5, 0.5, 1.0, 1.0]], dtype=torch.float32)
+    def _class_id(self, surface: SurfaceType, label_dir: str, cracked: bool) -> int:
+        if self.class_mode == "binary":
+            return 1 if cracked else 0
+        return self.class_names.index(label_dir)
 
     @staticmethod
     def _pil_to_tensor(image: Image.Image) -> torch.Tensor:
@@ -162,100 +156,51 @@ class SDNET2018YoloDataset(Dataset):
         return data.permute(2, 0, 1).contiguous().float().div(255.0)
 
 
-def yolo_collate_fn(batch):
-    """Collate variable-length YOLO targets for torch DataLoader."""
-
-    if len(batch[0]) == 2:
-        images, targets = zip(*batch)
-        return torch.stack(images, dim=0), list(targets)
-
-    images, targets, metas = zip(*batch)
-    return torch.stack(images, dim=0), list(targets), list(metas)
-
-
-def create_dataset(path: str | Path) -> Path:
-    """Create a weak Ultralytics YOLO dataset from SDNET2018 and return data.yaml."""
-
-    source_root = Path(path)
-    output_root = Path("datasets") / "sdnet2018_yolo_weak"
-    data_yaml = output_root / "data.yaml"
-    if data_yaml.exists():
-        return data_yaml
-
-    dataset = SDNET2018YoloDataset(source_root, return_meta=True)
-    train_samples, val_samples = split_samples(dataset.samples, val_ratio=0.2, seed=42)
-
-    for split, samples in (("train", train_samples), ("val", val_samples)):
-        image_dir = output_root / "images" / split
-        label_dir = output_root / "labels" / split
-        image_dir.mkdir(parents=True, exist_ok=True)
-        label_dir.mkdir(parents=True, exist_ok=True)
-
-        progress = tqdm(samples, desc=f"Preparing {split}", unit="image")
-        for sample in progress:
-            output_name = f"{sample.surface}_{sample.label_dir}_{sample.image_path.stem}{sample.image_path.suffix.lower()}"
-            output_image = image_dir / output_name
-            output_label = label_dir / f"{Path(output_name).stem}.txt"
-
-            link_or_copy(sample.image_path, output_image)
-            write_yolo_label(output_label, SDNET2018YoloDataset._target_for_sample(sample))
-
-    data_yaml.write_text(
-        "\n".join(
-            [
-                f"path: {output_root.resolve().as_posix()}",
-                "train: images/train",
-                "val: images/val",
-                "names:",
-                "  0: crack",
-                "",
-            ]
-        ),
-        encoding="utf-8",
+def create_dataset(
+    path: str | Path,
+    *,
+    class_mode: ClassMode = "binary",
+    return_meta: bool = True,
+    transform: Callable | None = None,
+) -> tuple[SDNET2018ClassificationDataset, int]:
+    dataset = SDNET2018ClassificationDataset(
+        path,
+        class_mode=class_mode,
+        return_meta=return_meta,
+        transform=transform,
     )
-    return data_yaml
+    return dataset, dataset.num_classes
 
 
-def split_samples(
-    samples: list[SDNET2018Sample],
-    val_ratio: float,
-    seed: int,
-) -> tuple[list[SDNET2018Sample], list[SDNET2018Sample]]:
+def split_dataset(
+    dataset: SDNET2018ClassificationDataset,
+    *,
+    train_ratio: float = 0.8,
+    seed: int = 42,
+) -> tuple[Subset, Subset]:
+    if not 0.0 < train_ratio < 1.0:
+        raise ValueError(f"train_ratio must be between 0 and 1, got {train_ratio}")
+
+    indices = list(range(len(dataset)))
     rng = random.Random(seed)
-    shuffled = samples[:]
-    rng.shuffle(shuffled)
+    rng.shuffle(indices)
 
-    val_count = max(1, int(round(len(shuffled) * val_ratio)))
-    return shuffled[val_count:], shuffled[:val_count]
-
-
-def link_or_copy(source: Path, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists():
-        return
-
-    try:
-        os.link(source, destination)
-    except OSError:
-        shutil.copy2(source, destination)
-
-
-def write_yolo_label(label_path: Path, target: torch.Tensor) -> None:
-    label_path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [" ".join(f"{value:g}" for value in row.tolist()) for row in target]
-    label_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    train_count = int(round(len(indices) * train_ratio))
+    return Subset(dataset, indices[:train_count]), Subset(dataset, indices[train_count:])
 
 
 if __name__ == "__main__":
-    dataset = SDNET2018YoloDataset("SDNET2018")
+    dataset, class_num = create_dataset("SDNET2018")
     image, target, meta = dataset[0]
 
-    cracked_count = sum(sample.cracked for sample in dataset.samples)
-    uncracked_count = len(dataset) - cracked_count
+    class_counts = {name: 0 for name in dataset.class_names}
+    for sample in dataset.samples:
+        class_counts[dataset.class_names[sample.class_id]] += 1
 
     print(f"samples: {len(dataset)}")
-    print(f"cracked: {cracked_count}")
-    print(f"uncracked: {uncracked_count}")
+    print(f"class_num: {class_num}")
+    print(f"class_names: {dataset.class_names}")
+    print(f"class_counts: {class_counts}")
     print(f"image shape: {tuple(image.shape)}")
-    print(f"target: {target.tolist()}")
+    print(f"target: {target.item()}")
     print(f"meta: {meta}")
