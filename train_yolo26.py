@@ -12,13 +12,13 @@ from pathlib import Path
 # from multi_defact_yolo_dataset import create_dataset
 # DATASET_PATH=("RawDataset/multi_defact")
 
-from csb_yolo_dataset import create_dataset
-DATASET_PATH = Path("RawDataset/CSB_dataset")
+from combined_yolo_dataset import create_dataset
+DATASET_PATH=None
 
-MODEL = "yolo26n.pt"
-EPOCHS = 100
+MODEL = "yolo26m.pt"
+EPOCHS = 50
 IMGSZ = 640
-BATCH = 32
+BATCH = 16
 WORKERS = 12
 DEVICE = None
 PROJECT = "runs/detect"

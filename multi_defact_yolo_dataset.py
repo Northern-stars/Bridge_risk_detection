@@ -16,12 +16,12 @@ MultiDefactSplit = Literal["train", "valid", "test"]
 
 
 MULTI_DEFACT_CLASSES = [
-    "class_0",
-    "class_1",
-    "class_2",
-    "class_3",
-    "class_4",
-    "class_5",
+    "Cracks",
+    "Spalling",
+    "Honeycomb_Surface",
+    "Exposed_Rebar",
+    "Seepage",
+    "Hole",
 ]
 
 
