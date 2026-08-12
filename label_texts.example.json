@@ -1,0 +1,21 @@
+{
+  "crack": "visible crack damage on bridge or concrete surface",
+  "alligator_crack": "alligator crack pattern with connected branching cracks",
+  "wetspot": "wet spot or water seepage mark on concrete",
+  "efflorescence": "white efflorescence deposit on concrete surface",
+  "rust": "rust stain or corrosion mark",
+  "rockpocket": "honeycomb or rock pocket defect on concrete",
+  "hollowareas": "hollow area defect on concrete",
+  "cavity": "hole or cavity defect on concrete surface",
+  "spalling": "spalling concrete with broken or missing surface material",
+  "graffiti": "graffiti painted on bridge structure",
+  "weathering": "weathering damage on concrete surface",
+  "restformwork": "remaining formwork material attached to concrete",
+  "exposed_rebars": "exposed reinforcing steel bar",
+  "bearing": "bridge bearing component defect",
+  "expansion_joint": "bridge expansion joint defect",
+  "drainage": "drainage component defect",
+  "protective_equipment": "protective equipment defect",
+  "joint_tape": "joint tape defect",
+  "washouts_concrete_corrosion": "washout or concrete corrosion damage"
+}

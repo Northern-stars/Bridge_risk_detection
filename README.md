@@ -350,6 +350,89 @@ will stop with an explicit error instead of falling back to `MODEL`.
 Dataset generation uses `tqdm`, so converting images and labels will show a
 progress bar before training starts.
 
+## YOLO-World Training
+
+Training entry:
+
+```text
+train_yolo_world.py
+```
+
+This script follows the same top-level configuration style as `train_yolo26.py`.
+The dataset is still selected by changing the import block at the top:
+
+```python
+from combined_yolo_dataset import create_dataset
+DATASET_PATH = None
+```
+
+YOLO-World additionally needs a JSON file that maps class labels to text
+descriptions:
+
+```python
+LABEL_TEXT_JSON = Path("label_texts.json")
+```
+
+An example is provided in:
+
+```text
+label_texts.example.json
+```
+
+Supported JSON formats include class-name mapping:
+
+```json
+{
+  "crack": "visible crack damage on bridge or concrete surface",
+  "spalling": "spalling concrete with broken or missing surface material"
+}
+```
+
+class-id mapping:
+
+```json
+{
+  "0": "visible crack damage on bridge or concrete surface",
+  "1": "alligator crack pattern with connected branching cracks"
+}
+```
+
+or list entries:
+
+```json
+[
+  {"id": 0, "text": "visible crack damage on bridge or concrete surface"},
+  {"name": "spalling", "text": "spalling concrete with broken or missing surface material"}
+]
+```
+
+The script reads the original YOLO `data.yaml`, replaces the `names` block with
+the text descriptions, and writes:
+
+```text
+datasets/yolo_world_data.yaml
+```
+
+Then run:
+
+```bash
+python train_yolo_world.py
+```
+
+Main settings:
+
+```python
+MODEL = "yolov8s-world.pt"
+EPOCHS = 50
+IMGSZ = 640
+BATCH = 16
+PROJECT = "runs/detect"
+NAME = "yolo_world_train"
+```
+
+If the installed Ultralytics version exposes `YOLOWorld`, the script uses it.
+Otherwise it falls back to `YOLO` with the configured world model weights.
+
 ## YOLO26 Inference
 
 Single-image inference:
