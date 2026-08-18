@@ -495,6 +495,38 @@ http://127.0.0.1:7860
 Upload an image and the page will show the original image and the boxed
 detection result.
 
+YOLO-World text-prompt web UI:
+
+```text
+web_yolo_world_infer.py
+```
+
+Start the app:
+
+```bash
+python web_yolo_world_infer.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:7861
+```
+
+Upload an image and enter open-vocabulary class descriptions. The text box
+accepts one description per line, comma/semicolon separated descriptions, or
+JSON formats such as:
+
+```json
+[
+  "visible crack damage on bridge or concrete surface",
+  {"text": "spalling concrete with broken or missing surface material"}
+]
+```
+
+The page shows parsed text classes, boxed detections, class statistics,
+human-readable output analysis, and JSON output.
+
 ## Classification Training
 
 Classification files:
