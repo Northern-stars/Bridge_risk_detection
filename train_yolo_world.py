@@ -19,7 +19,7 @@ from combined_yolo_dataset import create_dataset
 DATASET_PATH = None
 
 MODEL = "yolov8s-world.pt"
-LABEL_TEXT_JSON = Path("label_texts.json")
+LABEL_TEXT_JSON = Path("label_texts.example.json")
 GENERATED_DATA_YAML = Path("datasets") / "yolo_world_data.yaml"
 
 LOAD = False

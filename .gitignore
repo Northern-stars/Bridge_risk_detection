@@ -5,3 +5,5 @@ DownloadDataset*
 RawDataset*
 ._*
 *.pth
+runs/*
+weights/*

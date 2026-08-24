@@ -60,7 +60,7 @@ DACL_TO_CANONICAL = {
     "Hollowareas": "hollowareas",
     "Cavity": "cavity",
     "Spalling": "spalling",
-    "Graffiti": "graffiti",
+    "Graffiti": "graffiti",#deletable
     "Weathering": "weathering",
     "Restformwork": "restformwork",
     "ExposedRebars": "exposed_rebars",

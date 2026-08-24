@@ -468,10 +468,10 @@ The boxed result is saved under:
 runs/infer/yolo26/
 ```
 
-Simple web UI:
+Unified web UI:
 
 ```text
-web_yolo26_infer.py
+web_yolo_infer.py
 ```
 
 Install Flask if needed:
@@ -483,7 +483,7 @@ pip install flask
 Start the web app:
 
 ```bash
-python web_yolo26_infer.py
+python web_yolo_infer.py
 ```
 
 Open:
@@ -492,30 +492,10 @@ Open:
 http://127.0.0.1:7860
 ```
 
-Upload an image and the page will show the original image and the boxed
-detection result.
-
-YOLO-World text-prompt web UI:
-
-```text
-web_yolo_world_infer.py
-```
-
-Start the app:
-
-```bash
-python web_yolo_world_infer.py
-```
-
-Open:
-
-```text
-http://127.0.0.1:7861
-```
-
-Upload an image and enter open-vocabulary class descriptions. The text box
-accepts one description per line, comma/semicolon separated descriptions, or
-JSON formats such as:
+Upload an image, then choose `YOLO26` or `YOLO-World` from the model selector.
+When `YOLO-World` is selected, the page shows a text description box for
+open-vocabulary prompts. The text box accepts one description per line,
+comma/semicolon separated descriptions, or JSON formats such as:
 
 ```json
 [
