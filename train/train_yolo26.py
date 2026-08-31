@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
 
-# from deepcrack_yolo_dataset import create_dataset
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+# from dataset.deepcrack_yolo_dataset import create_dataset
 # DATASET_PATH = Path("DownloadDataset/Deepcrack/DeepCrack-master/dataset/DeepCrack")
 
-# from dacl_yolo_dataset import create_dataset
+# from dataset.dacl_yolo_dataset import create_dataset
 # DATASET_PATH=Path("RawDataset/dacl")
 
-# from multi_defact_yolo_dataset import create_dataset
+# from dataset.multi_defact_yolo_dataset import create_dataset
 # DATASET_PATH=("RawDataset/multi_defact")
 
-from combined_yolo_dataset import create_dataset
+from dataset.combined_yolo_dataset import create_dataset
 DATASET_PATH=None
 
 MODEL = "yolo26l.pt"

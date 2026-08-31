@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import torch
 from torch import nn
@@ -8,8 +9,13 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dacl_segmentation_dataset import create_train_val_datasets
-from dacl_segmentation_model import create_model
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from dataset.dacl_segmentation_dataset import create_train_val_datasets
+from train.dacl_segmentation_model import create_model
 
 
 DATASET_PATH = Path("RawDataset/dacl")

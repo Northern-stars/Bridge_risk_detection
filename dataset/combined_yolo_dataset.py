@@ -6,10 +6,10 @@ import shutil
 
 from tqdm import tqdm
 
-from csb_yolo_dataset import create_dataset as create_csb_dataset
-from dacl_yolo_dataset import DACL_CLASSES, create_dataset as create_dacl_dataset
-from deepcrack_yolo_dataset import create_dataset as create_deepcrack_dataset
-from multi_defact_yolo_dataset import MULTI_DEFACT_CLASSES, create_dataset as create_multi_defact_dataset
+from dataset.csb_yolo_dataset import create_dataset as create_csb_dataset
+from dataset.dacl_yolo_dataset import DACL_CLASSES, create_dataset as create_dacl_dataset
+from dataset.deepcrack_yolo_dataset import create_dataset as create_deepcrack_dataset
+from dataset.multi_defact_yolo_dataset import MULTI_DEFACT_CLASSES, create_dataset as create_multi_defact_dataset
 
 
 OUTPUT_ROOT = Path("datasets") / "combined_bridge_defect_yolo"

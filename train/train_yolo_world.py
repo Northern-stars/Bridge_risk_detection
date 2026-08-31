@@ -4,22 +4,28 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 from typing import Any
 
-# from deepcrack_yolo_dataset import create_dataset
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+# from dataset.deepcrack_yolo_dataset import create_dataset
 # DATASET_PATH = Path("DownloadDataset/Deepcrack/DeepCrack-master/dataset/DeepCrack")
 
-# from dacl_yolo_dataset import create_dataset
+# from dataset.dacl_yolo_dataset import create_dataset
 # DATASET_PATH = Path("RawDataset/dacl")
 
-# from multi_defact_yolo_dataset import create_dataset
+# from dataset.multi_defact_yolo_dataset import create_dataset
 # DATASET_PATH = Path("RawDataset/multi_defact")
 
-from combined_yolo_dataset import create_dataset
+from dataset.combined_yolo_dataset import create_dataset
 DATASET_PATH = None
 
 MODEL = "yolov8s-world.pt"
-LABEL_TEXT_JSON = Path("label_texts.example.json")
+LABEL_TEXT_JSON = Path("train") / "label_texts.example.json"
 GENERATED_DATA_YAML = Path("datasets") / "yolo_world_data.yaml"
 
 LOAD = False

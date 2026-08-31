@@ -10,7 +10,7 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset
 
-from dacl_yolo_dataset import DACL_CLASSES, CLASS_TO_ID
+from dataset.dacl_yolo_dataset import DACL_CLASSES, CLASS_TO_ID
 
 
 DaclSplit = Literal["train", "validation"]

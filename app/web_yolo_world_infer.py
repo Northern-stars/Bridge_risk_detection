@@ -1,28 +1,42 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
-import json
 from pathlib import Path
+import json
 import re
 import shutil
+import sys
 from uuid import uuid4
 
 from flask import Flask, render_template_string, request, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 
 
-HOST = "127.0.0.1"
-PORT = 7860
-APP_ROOT = Path("runs/web_infer/yolo")
-UPLOAD_DIR = APP_ROOT / "uploads"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+
+APP_ROOT = ROOT_DIR / "runs" / "web_infer"
+UPLOAD_DIR = APP_ROOT / "yolo" / "uploads"
 RESULT_DIR = APP_ROOT / "results"
+HOST = "127.0.0.1"
+PORT = 7861
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+PROJECT = Path("runs/detect")
+RUN_NAME = "yolo_world_train"
+WEIGHTS_DIR = PROJECT / RUN_NAME / "weights"
+WEIGHT_CANDIDATES = (
+    WEIGHTS_DIR / "latest.pth",
+    WEIGHTS_DIR / "best.pt",
+    WEIGHTS_DIR / "last.pt",
+)
+MODEL = "yolov8s-world.pt"
 
 IMGSZ = 640
 CONF = 0.25
 DEVICE = None
-
 DEFAULT_TEXT_PROMPTS = """visible crack damage on bridge or concrete surface
 spalling concrete with broken or missing surface material
 exposed reinforcing steel bar
@@ -30,45 +44,7 @@ rust stain or corrosion mark
 bridge expansion joint defect"""
 
 
-@dataclass(frozen=True)
-class ModelConfig:
-    key: str
-    label: str
-    model_type: str
-    default_weight: str
-    weight_candidates: tuple[Path, ...]
-
-
-MODEL_CONFIGS = {
-    "yolo26": ModelConfig(
-        key="yolo26",
-        label="YOLO26",
-        model_type="yolo",
-        default_weight="yolo26l.pt",
-        weight_candidates=(
-            Path("F:/opt/homebrew/runs/detect/runs/detect/yolo26_train/weights/latest.pth"),
-            Path("F:/opt/homebrew/runs/detect/runs/detect/yolo26_train/weights/best.pt"),
-            Path("F:/opt/homebrew/runs/detect/runs/detect/yolo26_train/weights/last.pt"),
-            Path("yolo26l.pt"),
-        ),
-    ),
-    "yolo_world": ModelConfig(
-        key="yolo_world",
-        label="YOLO-World",
-        model_type="world",
-        default_weight="yolov8s-world.pt",
-        weight_candidates=(
-            Path("runs/detect/yolo_world_train/weights/latest.pth"),
-            Path("runs/detect/yolo_world_train/weights/best.pt"),
-            Path("runs/detect/yolo_world_train/weights/last.pt"),
-        ),
-    ),
-}
-DEFAULT_MODEL_KEY = "yolo26"
-
-
 app = Flask(__name__)
-MODEL_CACHE: dict[tuple[str, str, tuple[str, ...]], object] = {}
 
 
 PAGE_TEMPLATE = """
@@ -77,7 +53,7 @@ PAGE_TEMPLATE = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bridge Defect Detection</title>
+  <title>YOLO-World Bridge Detection</title>
   <style>
     :root {
       color-scheme: light;
@@ -103,7 +79,7 @@ PAGE_TEMPLATE = """
     }
     form {
       display: grid;
-      grid-template-columns: 220px minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.75fr);
       gap: 16px;
       padding: 16px;
       background: #ffffff;
@@ -117,7 +93,6 @@ PAGE_TEMPLATE = """
       font-size: 14px;
       font-weight: 700;
     }
-    select,
     input[type="file"],
     textarea {
       width: 100%;
@@ -128,27 +103,21 @@ PAGE_TEMPLATE = """
       color: #1f2933;
       font: inherit;
     }
-    select,
     input[type="file"] {
       padding: 9px;
     }
     textarea {
-      min-height: 154px;
+      min-height: 168px;
       padding: 10px 12px;
       line-height: 1.55;
       resize: vertical;
-    }
-    .prompt-field {
-      grid-column: 1 / -1;
-    }
-    .prompt-field[hidden] {
-      display: none;
     }
     .actions {
       display: flex;
       align-items: center;
       justify-content: flex-end;
       grid-column: 1 / -1;
+      gap: 12px;
     }
     button {
       border: 0;
@@ -311,40 +280,36 @@ PAGE_TEMPLATE = """
 </head>
 <body>
   <main>
-    <h1>Bridge Defect Detection</h1>
+    <h1>YOLO-World Bridge Detection</h1>
     <form method="post" enctype="multipart/form-data">
-      <div>
-        <label for="model_key">模型</label>
-        <select id="model_key" name="model_key">
-          {% for key, config in model_configs.items() %}
-            <option value="{{ key }}" {{ "selected" if key == selected_model_key else "" }}>{{ config.label }}</option>
-          {% endfor %}
-        </select>
-      </div>
       <div>
         <label for="image">图片</label>
         <input id="image" type="file" name="image" accept="image/*" required>
       </div>
-      <div id="prompt_field" class="prompt-field" {{ "hidden" if selected_model.model_type != "world" else "" }}>
-        <label for="text_prompts">YOLO-World 文字描述</label>
-        <textarea id="text_prompts" name="text_prompts">{{ text_prompts }}</textarea>
+      <div>
+        <label for="text_prompts">文字描述</label>
+        <textarea id="text_prompts" name="text_prompts" required>{{ text_prompts }}</textarea>
       </div>
       <div class="actions">
         <button type="submit">上传并推理</button>
       </div>
     </form>
-    <div class="status">model: {{ selected_model.label }} | weights: {{ weight_path }}</div>
+    <div class="status">weights: {{ weight_path }}</div>
     {% if error %}
       <div class="error">{{ error }}</div>
     {% endif %}
-    {% if summary and summary.text_classes %}
+    {% if summary %}
       <section class="panel">
-        <div class="section-title">YOLO-World 已解析文字类别</div>
-        <div class="chip-list">
-          {% for text_class in summary.text_classes %}
-            <span class="chip">{{ loop.index }}. {{ text_class }}</span>
-          {% endfor %}
-        </div>
+        <div class="section-title">已解析文字类别</div>
+        {% if summary.text_classes %}
+          <div class="chip-list">
+            {% for text_class in summary.text_classes %}
+              <span class="chip">{{ loop.index }}. {{ text_class }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty">未解析到文字类别。</div>
+        {% endif %}
       </section>
     {% endif %}
     {% if original_url and result_url %}
@@ -358,17 +323,27 @@ PAGE_TEMPLATE = """
           <div class="metric-value">{{ summary.total_detections }} 处</div>
         </div>
         <div class="metric">
-          <div class="metric-label">{{ '命中类别' if summary.is_world else '缺陷类型' }}</div>
-          <div class="metric-value">{{ summary.defect_type_count }} 类</div>
+          <div class="metric-label">命中类别</div>
+          <div class="metric-value">{{ summary.matched_class_count }} 类</div>
         </div>
         <div class="metric">
-          <div class="metric-label">{{ '开放词表' if summary.is_world else '模型类型' }}</div>
-          <div class="metric-value">{{ summary.text_class_count if summary.is_world else selected_model.label }}</div>
+          <div class="metric-label">开放词表</div>
+          <div class="metric-value">{{ summary.text_class_count }} 类</div>
         </div>
         <div class="metric">
           <div class="metric-label">平均置信度</div>
           <div class="metric-value">{{ summary.mean_confidence_label }}</div>
         </div>
+      </section>
+      <section class="grid">
+        <figure>
+          <figcaption>原图</figcaption>
+          <img src="{{ original_url }}" alt="Uploaded image">
+        </figure>
+        <figure>
+          <figcaption>检测结果</figcaption>
+          <img src="{{ result_url }}" alt="Detection result">
+        </figure>
       </section>
       <section class="panel">
         <div class="section-title">输出解析</div>
@@ -380,7 +355,7 @@ PAGE_TEMPLATE = """
           <table>
             <thead>
               <tr>
-                <th>类别</th>
+                <th>文字类别</th>
                 <th>数量</th>
                 <th>平均置信度</th>
                 <th>最高置信度</th>
@@ -400,7 +375,7 @@ PAGE_TEMPLATE = """
             </tbody>
           </table>
         {% else %}
-          <div class="empty">未检测到桥梁缺陷目标。</div>
+          <div class="empty">没有命中任何输入的文字类别。</div>
         {% endif %}
       </section>
       <section class="panel">
@@ -410,7 +385,7 @@ PAGE_TEMPLATE = """
             <thead>
               <tr>
                 <th>#</th>
-                <th>类别</th>
+                <th>文字类别</th>
                 <th>类别 ID</th>
                 <th>置信度</th>
                 <th>位置 x1,y1,x2,y2</th>
@@ -436,27 +411,8 @@ PAGE_TEMPLATE = """
         <div class="section-title">JSON 输出</div>
         <pre>{{ summary.json_output }}</pre>
       </section>
-      <section class="grid">
-        <figure>
-          <figcaption>原图</figcaption>
-          <img src="{{ original_url }}" alt="Uploaded image">
-        </figure>
-        <figure>
-          <figcaption>检测结果</figcaption>
-          <img src="{{ result_url }}" alt="Detection result">
-        </figure>
-      </section>
     {% endif %}
   </main>
-  <script>
-    const modelSelect = document.getElementById("model_key");
-    const promptField = document.getElementById("prompt_field");
-    const syncPromptVisibility = () => {
-      promptField.hidden = modelSelect.value !== "yolo_world";
-    };
-    modelSelect.addEventListener("change", syncPromptVisibility);
-    syncPromptVisibility();
-  </script>
 </body>
 </html>
 """
@@ -468,37 +424,32 @@ def index():
     original_url = None
     result_url = None
     summary = None
-    selected_model_key = request.form.get("model_key", DEFAULT_MODEL_KEY)
-    if selected_model_key not in MODEL_CONFIGS:
-        selected_model_key = DEFAULT_MODEL_KEY
-    selected_model = MODEL_CONFIGS[selected_model_key]
-    text_prompts = request.form.get("text_prompts", DEFAULT_TEXT_PROMPTS)
+    text_prompts = DEFAULT_TEXT_PROMPTS
 
-    weight_path = resolve_weight_path(selected_model)
+    try:
+        weight_path = resolve_weight_path()
+    except FileNotFoundError as exc:
+        weight_path = "not found"
+        error = str(exc)
+
     if request.method == "POST":
-        file = request.files.get("image")
-        if file is None or file.filename == "":
-            error = "请选择一张图片。"
-        else:
-            try:
-                text_classes = parse_text_classes(text_prompts) if selected_model.model_type == "world" else []
-                input_path = save_upload(file, selected_model)
-                output_path, summary = infer_uploaded_image(
-                    image_path=input_path,
-                    weight_path=weight_path,
-                    model_config=selected_model,
-                    text_classes=text_classes,
-                )
-                original_url = url_for("serve_upload", model_key=selected_model.key, filename=input_path.name)
-                result_url = url_for("serve_result", model_key=selected_model.key, filename=output_path.name)
-            except Exception as exc:
-                error = str(exc)
+        text_prompts = request.form.get("text_prompts", "")
+        if error is None:
+            file = request.files.get("image")
+            if file is None or file.filename == "":
+                error = "请选择一张图片。"
+            else:
+                try:
+                    text_classes = parse_text_classes(text_prompts)
+                    input_path = save_upload(file)
+                    output_path, summary = infer_uploaded_image(input_path, weight_path, text_classes)
+                    original_url = url_for("serve_upload", filename=input_path.name)
+                    result_url = url_for("serve_result", filename=output_path.name)
+                except Exception as exc:
+                    error = str(exc)
 
     return render_template_string(
         PAGE_TEMPLATE,
-        model_configs=MODEL_CONFIGS,
-        selected_model_key=selected_model_key,
-        selected_model=selected_model,
         weight_path=weight_path,
         error=error,
         original_url=original_url,
@@ -508,49 +459,42 @@ def index():
     )
 
 
-@app.route("/uploads/<model_key>/<path:filename>")
-def serve_upload(model_key: str, filename: str):
-    return send_from_directory(UPLOAD_DIR / model_key, filename)
+@app.route("/uploads/<path:filename>")
+def serve_upload(filename: str):
+    return send_from_directory(UPLOAD_DIR, filename)
 
 
-@app.route("/results/<model_key>/<path:filename>")
-def serve_result(model_key: str, filename: str):
-    return send_from_directory(RESULT_DIR / model_key, filename)
+@app.route("/results/<path:filename>")
+def serve_result(filename: str):
+    return send_from_directory(RESULT_DIR, filename)
 
 
-def save_upload(file, model_config: ModelConfig) -> Path:
-    upload_dir = UPLOAD_DIR / model_config.key
-    upload_dir.mkdir(parents=True, exist_ok=True)
+def save_upload(file) -> Path:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     suffix = Path(file.filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise ValueError(f"Unsupported image extension: {suffix}")
 
     safe_name = secure_filename(file.filename)
     filename = f"{uuid4().hex}_{safe_name}"
-    output_path = upload_dir / filename
+    output_path = UPLOAD_DIR / filename
     file.save(output_path)
     return output_path
 
 
-def infer_uploaded_image(
-    *,
-    image_path: Path,
-    weight_path: Path | str,
-    model_config: ModelConfig,
-    text_classes: list[str],
-) -> tuple[Path, dict]:
+def infer_uploaded_image(image_path: Path, weight_path: Path | str, text_classes: list[str]) -> tuple[Path, dict]:
     from PIL import Image
 
-    model_result_dir = RESULT_DIR / model_config.key
-    model_result_dir.mkdir(parents=True, exist_ok=True)
-    model = get_model(model_config, weight_path, text_classes)
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
+    model = create_yolo_world_model(weight_path)
+    set_world_classes(model, text_classes)
 
     predict_kwargs = {
         "source": str(image_path),
         "imgsz": IMGSZ,
         "conf": CONF,
         "save": True,
-        "project": str(model_result_dir),
+        "project": str(RESULT_DIR),
         "name": "_tmp",
         "exist_ok": True,
     }
@@ -560,32 +504,14 @@ def infer_uploaded_image(
     results = model.predict(**predict_kwargs)
     result = results[0]
     plotted = Path(result.save_dir) / image_path.name
-    output_path = model_result_dir / f"{image_path.stem}_boxed{image_path.suffix}"
+    output_path = RESULT_DIR / f"{image_path.stem}_boxed{image_path.suffix}"
 
     if plotted.exists():
         shutil.copy2(plotted, output_path)
     else:
         rendered = result.plot()
         Image.fromarray(rendered[..., ::-1]).save(output_path)
-
-    return output_path, summarize_result(result, model_config, text_classes)
-
-
-def get_model(model_config: ModelConfig, weight_path: Path | str, text_classes: list[str]):
-    cache_key = (model_config.key, str(weight_path), tuple(text_classes))
-    if cache_key in MODEL_CACHE:
-        return MODEL_CACHE[cache_key]
-
-    if model_config.model_type == "world":
-        model = create_yolo_world_model(weight_path)
-        set_world_classes(model, text_classes)
-    else:
-        from ultralytics import YOLO
-
-        model = YOLO(str(weight_path))
-
-    MODEL_CACHE[cache_key] = model
-    return model
+    return output_path, summarize_result(result, text_classes)
 
 
 def create_yolo_world_model(model_path: Path | str):
@@ -703,7 +629,7 @@ def normalize_text(value) -> str:
     return text
 
 
-def summarize_result(result, model_config: ModelConfig, text_classes: list[str]) -> dict:
+def summarize_result(result, text_classes: list[str]) -> dict:
     detections = parse_detections(result)
     class_groups = defaultdict(list)
     for detection in detections:
@@ -736,13 +662,11 @@ def summarize_result(result, model_config: ModelConfig, text_classes: list[str])
     min_confidence = min((detection["confidence"] for detection in detections), default=None)
 
     summary = {
-        "is_world": model_config.model_type == "world",
         "is_safe": total_detections == 0,
-        "model": model_config.label,
         "text_classes": text_classes,
         "text_class_count": len(text_classes),
         "total_detections": total_detections,
-        "defect_type_count": len(by_class),
+        "matched_class_count": len(by_class),
         "mean_confidence": mean_confidence,
         "mean_confidence_label": format_confidence(mean_confidence),
         "max_confidence": max_confidence,
@@ -797,41 +721,31 @@ def resolve_class_name(names, class_id: int) -> str:
 
 def build_analysis(summary: dict) -> str:
     if summary["total_detections"] == 0:
-        if summary["is_world"]:
-            return (
-                f"已按 {summary['text_class_count']} 个文字描述进行开放词表检测，"
-                "当前照片没有命中目标，判定为安全。"
-            )
-        return "当前照片未检测到桥梁缺陷目标，判定为安全。"
+        return (
+            f"已按 {summary['text_class_count']} 个文字描述进行开放词表检测，"
+            "当前照片没有命中目标，判定为安全。"
+        )
 
     class_parts = [f"{item['class_name']} {item['count']} 处" for item in summary["by_class"]]
     class_text = "、".join(class_parts)
     top_class = summary["by_class"][0]
-    if summary["is_world"]:
-        return (
-            f"已按 {summary['text_class_count']} 个文字描述进行开放词表检测，"
-            f"命中 {summary['defect_type_count']} 类、共 {summary['total_detections']} 处目标，"
-            f"判定为存在风险；命中类别包括 {class_text}。"
-            f"平均置信度为 {summary['mean_confidence_label']}，"
-            f"数量最多的是 {top_class['class_name']} ({top_class['count']} 处)。"
-            "请结合检测结果图中的框和类别进行复核。"
-        )
     return (
-        f"当前照片检测到 {summary['total_detections']} 处疑似缺陷，判定为存在风险；"
-        f"缺陷类型包括 {class_text}。"
-        f"平均置信度为 {summary['mean_confidence_label']}，其中数量最多的是 {top_class['class_name']} "
-        f"({top_class['count']} 处)。请结合检测结果图中的框和类别进行复核。"
+        f"已按 {summary['text_class_count']} 个文字描述进行开放词表检测，"
+        f"命中 {summary['matched_class_count']} 类、共 {summary['total_detections']} 处目标，"
+        f"判定为存在风险；命中类别包括 {class_text}。"
+        f"平均置信度为 {summary['mean_confidence_label']}，"
+        f"数量最多的是 {top_class['class_name']} ({top_class['count']} 处)。"
+        "请结合检测结果图中的框和类别进行复核。"
     )
 
 
 def build_json_output(summary: dict) -> dict:
     keys = (
-        "model",
         "is_safe",
         "text_classes",
         "text_class_count",
         "total_detections",
-        "defect_type_count",
+        "matched_class_count",
         "mean_confidence",
         "max_confidence",
         "min_confidence",
@@ -848,11 +762,12 @@ def format_confidence(confidence: float | None) -> str:
     return f"{confidence * 100:.1f}%"
 
 
-def resolve_weight_path(model_config: ModelConfig) -> Path | str:
-    for candidate in model_config.weight_candidates:
+def resolve_weight_path() -> Path | str:
+    for candidate in WEIGHT_CANDIDATES:
         if candidate.exists():
             return candidate
-    return model_config.default_weight
+
+    return MODEL
 
 
 if __name__ == "__main__":

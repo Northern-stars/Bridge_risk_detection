@@ -1,48 +1,85 @@
 # Bridge Risk Detection
 
-This project converts several bridge/concrete defect datasets into a common
-training interface, then trains YOLO26 detection models or lightweight PyTorch
-classification models.
+本项目用于桥梁/混凝土缺陷检测、分类和分割实验。核心工作是把多个来源不同、标注格式不同的数据集统一整理成可训练的数据接口，然后分别支持：
 
-The main idea is:
+1. YOLO26 目标检测训练与推理。
+2. YOLO-World 开放词表目标检测训练与网页推理。
+3. SDNET2018 分类训练与测试。
+4. DACL bbox 语义分割训练与评估。
 
-1. Parse raw datasets with different annotation formats.
-2. Convert detection datasets into Ultralytics YOLO format.
-3. Keep dataset switching simple by changing the import block at the top of the
-   training script.
-4. Optionally merge multiple YOLO datasets into one canonical defect taxonomy.
-
-## Project Structure
-
-```text
-.
-├── train_yolo26.py                  # Generic Ultralytics YOLO26 training script
-├── combined_yolo_dataset.py         # Merges multiple YOLO datasets with class mapping
-├── csb_yolo_dataset.py              # CSB crack pixels -> YOLO bbox
-├── dacl_yolo_dataset.py             # DACL polygons -> YOLO bbox
-├── multi_defact_yolo_dataset.py     # Native YOLO-format multi-defect dataset
-├── deepcrack_yolo_dataset.py        # DeepCrack masks -> YOLO bbox
-├── sdnet2018_yolo_dataset.py        # SDNET2018 classification dataset adapter
-├── sdnet2018_classifier_model.py    # Classification model definition
-├── train_sdnet2018_classifier.py    # Generic classification training script
-├── test_sdnet2018_classifier.py     # Generic classification test script
-└── yolo26*.pt                       # Local YOLO26 pretrained weights
-```
-
-Generated datasets and training results are written under:
+生成的数据集和训练结果默认写入：
 
 ```text
 datasets/
 runs/
 ```
 
-## Datasets
+## 仓库结构
 
-### CSB Dataset
+当前代码按功能分为三个主要目录：
 
-Adapter: `csb_yolo_dataset.py`
+```text
+app/       # 应用程序、推理脚本、网页服务
+train/     # 训练脚本、测试脚本、模型定义、训练配置示例
+dataset/   # 数据集解析、格式转换、数据集适配器
+```
 
-Expected raw structure:
+### 应用程序
+
+```text
+app/web_yolo_infer.py          # 统一的 YOLO26 / YOLO-World 网页推理入口
+app/web_yolo26_infer.py        # 旧版 YOLO26 网页推理入口
+app/web_yolo_world_infer.py    # 旧版 YOLO-World 网页推理入口
+app/infer_yolo26_image.py      # 单张图片 YOLO26 推理脚本
+```
+
+### 训练脚本与模型
+
+```text
+train/train_yolo26.py                  # 通用 YOLO26 检测训练脚本
+train/train_yolo_world.py              # YOLO-World 检测训练脚本
+train/label_texts.example.json         # YOLO-World 类别文本描述示例
+
+train/sdnet2018_classifier_model.py    # 分类模型定义
+train/train_sdnet2018_classifier.py    # 分类训练脚本
+train/test_sdnet2018_classifier.py     # 分类测试脚本
+
+train/dacl_segmentation_model.py       # DACL 语义分割模型
+train/train_dacl_segmentation.py       # DACL 分割训练与评估脚本
+```
+
+### 数据集适配器
+
+```text
+dataset/combined_yolo_dataset.py         # 合并多个 YOLO 数据集并统一类别映射
+dataset/csb_yolo_dataset.py              # CSB crack pixels -> YOLO bbox
+dataset/dacl_yolo_dataset.py             # DACL polygon -> YOLO bbox
+dataset/multi_defact_yolo_dataset.py     # 原生 YOLO 格式多缺陷数据集
+dataset/deepcrack_yolo_dataset.py        # DeepCrack mask -> YOLO bbox
+dataset/sdnet2018_yolo_dataset.py        # SDNET2018 分类数据集适配器
+dataset/dacl_segmentation_dataset.py     # DACL polygon -> bbox 填充语义分割 mask
+```
+
+### 权重与文档
+
+```text
+yolo26*.pt                       # 本地 YOLO26 预训练权重
+yolov8s-world.pt                 # 本地 YOLO-World 预训练权重
+mangazero_panel_ordering_plan.md # MangaZero panel 排序任务技术方案
+README.md                        # 项目说明文档
+```
+
+## 数据集
+
+### CSB
+
+适配器：
+
+```text
+dataset/csb_yolo_dataset.py
+```
+
+期望原始结构：
 
 ```text
 RawDataset/CSB_dataset/
@@ -53,10 +90,9 @@ RawDataset/CSB_dataset/
     └── nocrack_test/
 ```
 
-Each image has JSON annotation data containing `annotations.crack_pixels`.
-The adapter converts crack pixels to one minimum bounding box per image.
+每张图片对应 JSON 标注，其中包含 `annotations.crack_pixels`。适配器会把 crack pixels 转换成最小外接框，并写成 YOLO 检测格式。
 
-YOLO output:
+输出：
 
 ```text
 datasets/csb_yolo/
@@ -67,7 +103,7 @@ datasets/csb_yolo/
 └── data.yaml
 ```
 
-Class:
+类别：
 
 ```text
 0: crack
@@ -75,9 +111,13 @@ Class:
 
 ### DACL
 
-Adapter: `dacl_yolo_dataset.py`
+适配器：
 
-Expected raw structure:
+```text
+dataset/dacl_yolo_dataset.py
+```
+
+期望原始结构：
 
 ```text
 RawDataset/dacl/
@@ -90,10 +130,9 @@ RawDataset/dacl/
         └── validation/
 ```
 
-DACL annotations are JSON polygon annotations. The adapter converts every
-polygon to its minimum enclosing YOLO bounding box.
+DACL 标注为 JSON polygon。检测适配器会把每个 polygon 转换成最小外接 YOLO bbox。
 
-Main classes include:
+主要类别：
 
 ```text
 Crack, ACrack, Wetspot, Efflorescence, Rust, Rockpocket, Hollowareas,
@@ -101,7 +140,7 @@ Cavity, Spalling, Graffiti, Weathering, Restformwork, ExposedRebars,
 Bearing, EJoint, Drainage, PEquipment, JTape, WConccor
 ```
 
-YOLO output:
+输出：
 
 ```text
 datasets/dacl_yolo/
@@ -109,9 +148,13 @@ datasets/dacl_yolo/
 
 ### Multi Defact
 
-Adapter: `multi_defact_yolo_dataset.py`
+适配器：
 
-Expected raw structure:
+```text
+dataset/multi_defact_yolo_dataset.py
+```
+
+期望原始结构：
 
 ```text
 RawDataset/multi_defact/
@@ -126,13 +169,13 @@ RawDataset/multi_defact/
     └── labels/
 ```
 
-The labels are already in YOLO format:
+该数据集的标签已经是 YOLO 格式：
 
 ```text
 class_id x_center y_center width height
 ```
 
-Current classes:
+当前类别：
 
 ```text
 0: Cracks
@@ -143,7 +186,7 @@ Current classes:
 5: Hole
 ```
 
-YOLO output:
+输出：
 
 ```text
 datasets/multi_defact_yolo/
@@ -151,9 +194,13 @@ datasets/multi_defact_yolo/
 
 ### DeepCrack
 
-Adapter: `deepcrack_yolo_dataset.py`
+适配器：
 
-Expected raw structure:
+```text
+dataset/deepcrack_yolo_dataset.py
+```
+
+期望原始结构：
 
 ```text
 DownloadDataset/Deepcrack/DeepCrack-master/dataset/DeepCrack/
@@ -161,16 +208,15 @@ DownloadDataset/Deepcrack/DeepCrack-master/dataset/DeepCrack/
 └── test/
 ```
 
-DeepCrack uses crack masks. The adapter converts foreground mask pixels to a
-minimum bounding box.
+DeepCrack 使用裂缝 mask。适配器会把 mask 前景区域转换成最小外接框。
 
-Class:
+类别：
 
 ```text
 0: crack
 ```
 
-YOLO output:
+输出：
 
 ```text
 datasets/deepcrack_yolo/
@@ -178,11 +224,15 @@ datasets/deepcrack_yolo/
 
 ### SDNET2018
 
-Adapter: `sdnet2018_yolo_dataset.py`
+适配器：
 
-This file is now used as a pure classification dataset adapter.
+```text
+dataset/sdnet2018_yolo_dataset.py
+```
 
-Expected raw structure:
+该文件当前作为纯分类数据集适配器使用。
+
+期望原始结构：
 
 ```text
 SDNET2018/
@@ -197,23 +247,29 @@ SDNET2018/
     └── UW/
 ```
 
-Supported classification modes:
+支持两种分类模式：
 
 ```text
 binary: uncracked, crack
 surface_damage: CD, UD, CP, UP, CW, UW
 ```
 
-The classification adapter exposes:
+接口：
 
 ```python
 create_dataset(path, return_meta=False) -> (dataset, class_num)
 split_dataset(dataset, train_ratio=0.8, seed=42) -> (train_dataset, val_dataset)
 ```
 
-## Combined YOLO Dataset
+## 合并 YOLO 数据集
 
-`combined_yolo_dataset.py` builds a unified YOLO dataset from:
+合并脚本：
+
+```text
+dataset/combined_yolo_dataset.py
+```
+
+它会合并以下数据集：
 
 ```text
 CSB
@@ -222,7 +278,7 @@ Multi Defact
 DeepCrack
 ```
 
-It writes:
+输出：
 
 ```text
 datasets/combined_bridge_defect_yolo/
@@ -235,7 +291,7 @@ datasets/combined_bridge_defect_yolo/
 └── data.yaml
 ```
 
-Class names are normalized into a shared taxonomy. For example:
+类别会被映射到统一 taxonomy，例如：
 
 ```text
 CSB crack -> crack
@@ -248,72 +304,76 @@ Multi Defact Seepage -> wetspot
 Multi Defact Hole -> cavity
 ```
 
-Missing source dataset paths are skipped with a message.
+缺失的原始数据集路径会被跳过并打印提示。
 
-`combined_yolo_dataset.py` also supports a class blacklist. Edit
-`BLACKLIST_CLASSES` at the top of the file to stop tracking selected classes:
+### 类别黑名单
+
+`dataset/combined_yolo_dataset.py` 支持类别黑名单。修改文件顶部的：
 
 ```python
 BLACKLIST_CLASSES = {"graffiti", "weathering"}
 ```
 
-The blacklist accepts canonical class names or canonical class ids. Images are
-still kept in the dataset, but boxes belonging to blacklisted classes are not
-written into the merged YOLO label files.
+黑名单支持 canonical 类别名或类别 id。图片仍会保留，但属于黑名单类别的框不会写入合并后的 YOLO label 文件。
 
-If the combined dataset has already been prepared, set:
+### 直接加载已准备数据
+
+如果合并数据集已经生成过，可以设置：
 
 ```python
 LOAD_PREPARED_DATASET = True
 ```
 
-or call:
+或调用：
 
 ```python
 create_dataset(load=True)
 ```
 
-This directly uses `datasets/combined_bridge_defect_yolo/data.yaml` and skips
-all source dataset preparation. If the prepared dataset does not exist, it will
-raise an error instead of silently rebuilding.
-
-## YOLO26 Training
-
-Training entry:
+这样会直接使用：
 
 ```text
-train_yolo26.py
+datasets/combined_bridge_defect_yolo/data.yaml
 ```
 
-By default it imports:
+不会重新准备数据，也不会删除旧数据。如果文件不存在，会直接报错。
+
+## YOLO26 训练
+
+训练入口：
+
+```text
+train/train_yolo26.py
+```
+
+默认数据集导入：
 
 ```python
-from combined_yolo_dataset import create_dataset
+from dataset.combined_yolo_dataset import create_dataset
 DATASET_PATH = None
 ```
 
-To train on another YOLO dataset, edit only the import block at the top of
-`train_yolo26.py`, for example:
+如果要切换到其他 YOLO 数据集，只需要修改文件顶部 import 和 `DATASET_PATH`，例如：
 
 ```python
-from csb_yolo_dataset import create_dataset
+from dataset.csb_yolo_dataset import create_dataset
 DATASET_PATH = Path("RawDataset/CSB_dataset")
 ```
 
-or:
+或：
 
 ```python
-from dacl_yolo_dataset import create_dataset
+from dataset.dacl_yolo_dataset import create_dataset
 DATASET_PATH = Path("RawDataset/dacl")
 ```
 
-Then run:
+运行：
 
 ```bash
-python train_yolo26.py
+python train/train_yolo26.py
 ```
 
-Main training settings are also at the top of `train_yolo26.py`:
+主要配置也在文件顶部：
 
 ```python
 MODEL = "yolo26n.pt"
@@ -328,58 +388,52 @@ PROJECT = "runs/detect"
 NAME = "yolo26_train"
 ```
 
-`MODEL` points to a local `.pt` file. Ultralytics loads this file as the initial
-weights and saves training outputs under `runs/detect/yolo26_train/`; it does
-not overwrite the source `.pt` weight file.
+`MODEL` 指向本地 `.pt` 权重。Ultralytics 会把它作为初始权重加载，训练结果保存到 `runs/detect/yolo26_train/`，不会覆盖原始 `.pt` 文件。
 
-To continue training from a saved run checkpoint, set:
+如果要从已有训练继续：
 
 ```python
 LOAD = True
 ```
 
-The script will load:
+脚本会加载：
 
 ```text
 runs/detect/yolo26_train/weights/latest.pth
 ```
 
-and pass `resume=True` to Ultralytics. If that file does not exist, training
-will stop with an explicit error instead of falling back to `MODEL`.
+并向 Ultralytics 传入 `resume=True`。如果该文件不存在，会直接报错，不会静默退回到 `MODEL`。
 
-Dataset generation uses `tqdm`, so converting images and labels will show a
-progress bar before training starts.
+数据集生成过程使用 `tqdm` 显示进度条。
 
-## YOLO-World Training
+## YOLO-World 训练
 
-Training entry:
+训练入口：
 
 ```text
-train_yolo_world.py
+train/train_yolo_world.py
 ```
 
-This script follows the same top-level configuration style as `train_yolo26.py`.
-The dataset is still selected by changing the import block at the top:
+它与 `train/train_yolo26.py` 保持相同的顶部配置风格。数据集仍然通过修改顶部 import 来切换：
 
 ```python
-from combined_yolo_dataset import create_dataset
+from dataset.combined_yolo_dataset import create_dataset
 DATASET_PATH = None
 ```
 
-YOLO-World additionally needs a JSON file that maps class labels to text
-descriptions:
+YOLO-World 额外需要一个 JSON 文件，把类别映射为文本描述：
 
 ```python
-LABEL_TEXT_JSON = Path("label_texts.json")
+LABEL_TEXT_JSON = Path("train") / "label_texts.example.json"
 ```
 
-An example is provided in:
+示例文件：
 
 ```text
-label_texts.example.json
+train/label_texts.example.json
 ```
 
-Supported JSON formats include class-name mapping:
+支持类别名映射：
 
 ```json
 {
@@ -388,7 +442,7 @@ Supported JSON formats include class-name mapping:
 }
 ```
 
-class-id mapping:
+支持类别 id 映射：
 
 ```json
 {
@@ -397,7 +451,7 @@ class-id mapping:
 }
 ```
 
-or list entries:
+也支持列表格式：
 
 ```json
 [
@@ -406,20 +460,19 @@ or list entries:
 ]
 ```
 
-The script reads the original YOLO `data.yaml`, replaces the `names` block with
-the text descriptions, and writes:
+脚本会读取原始 YOLO `data.yaml`，把 `names` 替换为文本描述，并写入：
 
 ```text
 datasets/yolo_world_data.yaml
 ```
 
-Then run:
+运行：
 
 ```bash
-python train_yolo_world.py
+python train/train_yolo_world.py
 ```
 
-Main settings:
+主要配置：
 
 ```python
 MODEL = "yolov8s-world.pt"
@@ -430,30 +483,29 @@ PROJECT = "runs/detect"
 NAME = "yolo_world_train"
 ```
 
-If the installed Ultralytics version exposes `YOLOWorld`, the script uses it.
-Otherwise it falls back to `YOLO` with the configured world model weights.
+如果当前安装的 Ultralytics 暴露了 `YOLOWorld`，脚本会优先使用它；否则会回退到 `YOLO` 加载 world 权重。
 
-## YOLO26 Inference
+## YOLO26 单图推理
 
-Single-image inference:
+推理入口：
 
 ```text
-infer_yolo26_image.py
+app/infer_yolo26_image.py
 ```
 
-Edit the input image path at the top of the file:
+修改文件顶部的输入图片路径：
 
 ```python
 IMAGE_PATH = Path("test.jpg")
 ```
 
-Then run:
+运行：
 
 ```bash
-python infer_yolo26_image.py
+python app/infer_yolo26_image.py
 ```
 
-The script searches for weights in this order:
+脚本会按顺序寻找权重：
 
 ```text
 F:/opt/homebrew/runs/detect/runs/detect/yolo26_train/weights/latest.pth
@@ -462,40 +514,46 @@ F:/opt/homebrew/runs/detect/runs/detect/yolo26_train/weights/last.pt
 yolo26l.pt
 ```
 
-The boxed result is saved under:
+画框结果保存到：
 
 ```text
 runs/infer/yolo26/
 ```
 
-Unified web UI:
+## 网页服务
+
+推荐使用统一网页入口：
 
 ```text
-web_yolo_infer.py
+app/web_yolo_infer.py
 ```
 
-Install Flask if needed:
+该网页服务在同一个前端中支持两种检测模式：
+
+```text
+YOLO26
+YOLO-World
+```
+
+安装依赖：
 
 ```bash
 pip install flask
 ```
 
-Start the web app:
+启动网页服务：
 
 ```bash
-python web_yolo_infer.py
+python app/web_yolo_infer.py
 ```
 
-Open:
+浏览器打开：
 
 ```text
 http://127.0.0.1:7860
 ```
 
-Upload an image, then choose `YOLO26` or `YOLO-World` from the model selector.
-When `YOLO-World` is selected, the page shows a text description box for
-open-vocabulary prompts. The text box accepts one description per line,
-comma/semicolon separated descriptions, or JSON formats such as:
+页面中可以通过模型下拉框切换 `YOLO26` 和 `YOLO-World`。选择 `YOLO-World` 时，会显示文本描述输入框，支持一行一个描述、逗号/分号分隔描述，也支持 JSON 格式，例如：
 
 ```json
 [
@@ -504,48 +562,62 @@ comma/semicolon separated descriptions, or JSON formats such as:
 ]
 ```
 
-The page shows parsed text classes, boxed detections, class statistics,
-human-readable output analysis, and JSON output.
-
-## Classification Training
-
-Classification files:
+网页会展示：
 
 ```text
-sdnet2018_classifier_model.py
-train_sdnet2018_classifier.py
-test_sdnet2018_classifier.py
+原图
+检测结果图
+安全结论
+检测目标数量
+类别统计
+目标框明细
+JSON 输出
 ```
 
-The model is initialized dynamically from the dataset class count:
+旧版网页入口仍然保留：
+
+```text
+app/web_yolo26_infer.py        # 仅 YOLO26，端口 http://127.0.0.1:7860
+app/web_yolo_world_infer.py    # 仅 YOLO-World，端口 http://127.0.0.1:7861
+```
+
+## 分类训练与测试
+
+相关文件：
+
+```text
+train/sdnet2018_classifier_model.py
+train/train_sdnet2018_classifier.py
+train/test_sdnet2018_classifier.py
+```
+
+模型会根据数据集返回的类别数动态初始化分类头：
 
 ```python
 dataset, class_num = create_dataset(DATASET_PATH)
 model = create_model(class_num)
 ```
 
-To switch classification datasets, edit the import block at the top of
-`train_sdnet2018_classifier.py` and `test_sdnet2018_classifier.py`. The dataset
-module must provide:
+如果要切换分类数据集，修改 `train/train_sdnet2018_classifier.py` 和 `train/test_sdnet2018_classifier.py` 顶部的 import。被导入的数据集模块需要提供：
 
 ```python
 create_dataset(path, return_meta=False) -> (dataset, class_num)
 split_dataset(dataset, train_ratio=..., seed=...) -> (train_dataset, val_dataset)
 ```
 
-Train:
+训练：
 
 ```bash
-python train_sdnet2018_classifier.py
+python train/train_sdnet2018_classifier.py
 ```
 
-Test:
+测试：
 
 ```bash
-python test_sdnet2018_classifier.py
+python train/test_sdnet2018_classifier.py
 ```
 
-Checkpoints are saved to:
+checkpoint 保存到：
 
 ```text
 runs/classify/classifier_train/
@@ -553,25 +625,28 @@ runs/classify/classifier_train/
 └── last.pt
 ```
 
-## DACL Segmentation Training
+## DACL 分割训练
 
-Segmentation files:
+相关文件：
 
 ```text
-dacl_segmentation_dataset.py
-dacl_segmentation_model.py
-train_dacl_segmentation.py
+dataset/dacl_segmentation_dataset.py
+train/dacl_segmentation_model.py
+train/train_dacl_segmentation.py
 ```
 
-This task uses DACL polygon annotations to create semantic segmentation masks.
-Each polygon is converted to its minimum enclosing bbox, and all pixels inside
-that bbox are filled with the corresponding class id. Class `0` is background;
-DACL classes start from `1`.
+该任务使用 DACL polygon 标注构造语义分割 mask。每个 polygon 先转成最小外接 bbox，然后 bbox 内所有像素填充对应类别 id。类别 `0` 是背景，DACL 原始类别从 `1` 开始。
 
-The model is a dilated ResNet50 backbone with an optional FPN neck, a
-transformer mask decoder, and a boundary-guided segmentation head. It predicts
-both semantic segmentation logits and a binary boundary map. The training
-objective combines multi-class Dice loss, cross-entropy, and boundary BCE loss:
+模型结构：
+
+```text
+dilated ResNet50 backbone
+optional FPN neck
+transformer mask decoder
+boundary-guided segmentation head
+```
+
+模型同时预测语义分割 logits 和二值边界图。训练目标由多类 Dice loss、交叉熵和边界 BCE loss 组成：
 
 ```python
 DICE_WEIGHT = 1.0
@@ -579,13 +654,13 @@ CE_WEIGHT = 0.2
 BOUNDARY_WEIGHT = 0.5
 ```
 
-Run:
+运行：
 
 ```bash
-python train_dacl_segmentation.py
+python train/train_dacl_segmentation.py
 ```
 
-Main settings are at the top of `train_dacl_segmentation.py`:
+主要配置在 `train/train_dacl_segmentation.py` 顶部：
 
 ```python
 DATASET_PATH = Path("RawDataset/dacl")
@@ -599,8 +674,7 @@ TRANSFORMER_HEADS = 4
 TRANSFORMER_QUERIES = 64
 ```
 
-After training, the script loads `best.pth` and reports held-out validation
-metrics as test metrics:
+训练结束后，脚本会加载 `best.pth`，并在 held-out validation 上输出测试指标：
 
 ```text
 mean_iou
@@ -608,11 +682,9 @@ mean_dice
 map50
 ```
 
-`map50` is computed as class-wise semantic mask AP50: for each foreground class
-present in an image, the predicted class mask is counted as a hit when its IoU
-with the target class mask is at least `0.5`.
+`map50` 按语义 mask 计算：对每个前景类别，如果预测类别 mask 与目标类别 mask 的 IoU 大于等于 `0.5`，则记为命中，最后跨类别求平均。
 
-Checkpoints are saved to:
+checkpoint 保存到：
 
 ```text
 runs/segment/dacl_resnet50_transformer_boundary/
@@ -620,15 +692,22 @@ runs/segment/dacl_resnet50_transformer_boundary/
 └── latest.pth
 ```
 
-## Requirements
+## MangaZero Panel 排序方案
 
-Install the core dependencies:
+项目中还包含一份 MangaZero panel 排序任务技术方案：
+
+```text
+mangazero_panel_ordering_plan.md
+```
+
+该文档讨论了如何使用 MangaZero 构建“给漫画 panel 排序”的任务，包括页面内阅读顺序排序、连续剧情排序、pairwise ranking、set-to-sequence transformer、评价指标和工程目录建议。
+
+## 依赖
+
+安装核心依赖：
 
 ```bash
 pip install torch torchvision ultralytics pillow tqdm flask
 ```
 
-The project assumes the raw datasets are placed under the paths configured at
-the top of each dataset/training script. No command-line argument parser is used;
-switching datasets is intentionally controlled by editing the top-level imports
-and path constants.
+本项目不使用命令行参数解析器。大多数脚本通过修改文件顶部的 import、路径常量和配置常量来切换数据集、模型和训练参数。

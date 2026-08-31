@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import torch
 from torch.utils.data import DataLoader
 
-from sdnet2018_classifier_model import create_model
-from sdnet2018_yolo_dataset import create_dataset, split_dataset
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from train.sdnet2018_classifier_model import create_model
+from dataset.sdnet2018_yolo_dataset import create_dataset, split_dataset
 
 
 # Change this import block to switch classification datasets:
 #
-# from sdnet2018_yolo_dataset import create_dataset, split_dataset
+# from dataset.sdnet2018_yolo_dataset import create_dataset, split_dataset
 # DATASET_PATH = Path("SDNET2018")
 #
 # The imported dataset module must expose:

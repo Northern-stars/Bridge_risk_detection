@@ -3,15 +3,21 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 import shutil
+import sys
 from uuid import uuid4
 
 from flask import Flask, render_template_string, request, send_from_directory, url_for
 from werkzeug.utils import secure_filename
 
-from infer_yolo26_image import CONF, DEVICE, IMGSZ, resolve_weight_path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from app.infer_yolo26_image import CONF, DEVICE, IMGSZ, resolve_weight_path
 
 
-APP_ROOT = Path("runs/web_infer/yolo26")
+APP_ROOT = ROOT_DIR / "runs" / "web_infer" / "yolo26"
 UPLOAD_DIR = APP_ROOT / "uploads"
 RESULT_DIR = APP_ROOT / "results"
 HOST = "127.0.0.1"
